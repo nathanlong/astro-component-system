@@ -35,6 +35,15 @@ A minimal, library-agnostic component orchestration system for Astro projects fo
 
 One component name per element. The value of `data-component` is matched against registered component definitions.
 
+Use `data-ref` to name structural child elements within a component, accessed via the `ref()` context helper:
+
+```html
+<div data-component="accordion">
+  <button data-ref="trigger">Open</button>
+  <div data-ref="panel">...</div>
+</div>
+```
+
 ---
 
 ## Public API
@@ -47,18 +56,26 @@ Registers a component definition with the system singleton.
 import { defineComponent } from '../scripts';
 
 defineComponent('hero', {
-  deps: ['nav'],           // optional — wait for 'nav' instances to finish init
-  async init({ element, viewport, prefersReducedMotion, system }) {
-    const title = element.querySelector('.title');
+  deps: ['nav'],  // optional — wait for 'nav' instances to finish init
+  init({ find, ref, ac, system, viewport, prefersReducedMotion, log }) {
+    const title   = ref<HTMLElement>('title');
+    const buttons = findAll<HTMLButtonElement>('.btn');
 
-    // React to resize
-    const onResize = ({ viewport }) => { /* update layout */ };
-    system.on('resize', onResize);
+    log('init', { viewport, prefersReducedMotion });
 
-    // Return cleanup
-    return () => {
-      system.off('resize', onResize);
-    };
+    // system.on and DOM listeners share the same AbortController
+    system.on('resize', ({ viewport }) => {
+      log('resize', viewport);
+    }, { signal: ac.signal });
+
+    buttons.forEach(btn =>
+      btn.addEventListener('click', handleClick, { signal: ac.signal })
+    );
+
+    function handleClick() { /* ... */ }
+
+    // ac.abort() called automatically on destroy — return only needed for
+    // non-listener cleanup (e.g. resetting animation state)
   }
 });
 ```
@@ -73,6 +90,11 @@ Each `init()` call receives:
 | `viewport` | `Readonly<Viewport>` | Live reference — always current dimensions |
 | `prefersReducedMotion` | `boolean` | Value at time of init |
 | `system` | `ComponentSystem` | System reference for `on`/`off` event subscription |
+| `ac` | `AbortController` | System-managed controller — aborted on destroy |
+| `find` | `<T extends Element>(selector: string) => T \| null` | `querySelector` scoped to `element` |
+| `findAll` | `<T extends Element>(selector: string) => T[]` | `querySelectorAll` scoped to `element`, returns array |
+| `ref` | `<T extends Element>(name: string) => T \| null` | Finds `[data-ref="name"]` within `element` |
+| `log` | `(msg: string, ...args: unknown[]) => void` | Dev-only logger prefixed with component name |
 
 ### Viewport
 
@@ -85,14 +107,36 @@ interface Viewport {
 
 Updated in place on every throttled resize event.
 
-### `system.on(event, callback)` / `system.off(event, callback)`
+### `system.on(event, callback, options?)` / `system.off(event, callback)`
 
-Opt-in subscription to global system events. Always clean up in the returned cleanup function.
+Opt-in subscription to global system events.
+
+```typescript
+system.on(event, callback, { signal?: AbortSignal })
+system.off(event, callback)
+```
+
+When a `signal` is provided, the listener is automatically removed when the signal aborts — no `system.off()` call needed. This allows a single `AbortController` to clean up both DOM listeners and system event listeners together.
 
 | Event | Callback payload |
 |-------|-----------------|
 | `'resize'` | `{ viewport: Viewport }` |
 | `'motionchange'` | `{ prefersReducedMotion: boolean }` |
+
+**Without signal** (manual cleanup):
+```typescript
+const onResize = ({ viewport }) => { /* ... */ };
+system.on('resize', onResize);
+return () => system.off('resize', onResize);
+```
+
+**With signal** (recommended — pairs with DOM listeners):
+```typescript
+const ac = new AbortController();
+system.on('resize', ({ viewport }) => { /* ... */ }, { signal: ac.signal });
+element.addEventListener('click', handler, { signal: ac.signal });
+return () => ac.abort(); // cleans up both at once
+```
 
 ---
 
@@ -108,6 +152,24 @@ type CleanupFn = () => void;
 ```
 
 `deps` defaults to `[]`. A component listed as a dep but not present in the current DOM is silently ignored — no blocking.
+
+### Cleanup and `ac` lifecycle
+
+The system creates one `AbortController` per instance before calling `init()`. On `destroy()`:
+
+1. `ac.abort()` fires — removes all listeners registered with `ac.signal`
+2. The cleanup function returned from `init()` is called (if any)
+
+Returning a cleanup function is only necessary for non-listener teardown (e.g. canceling animations, resetting DOM state). Components that only use `ac.signal` for all listeners need no return value.
+
+### `log` helper
+
+`log` is a no-op in production (`import.meta.env.DEV === false`). In development it prefixes output with the component name and element:
+
+```
+[hero] init { width: 1440, height: 900 }  <div data-component="hero">
+[hero] resize { width: 768, height: 900 }
+```
 
 ---
 
@@ -143,28 +205,55 @@ Wave 2: ['carousel']            // deps: ['hero']
 
 ## Initialization Flow
 
-```
-1. Module import
-   └─ new ComponentSystem()
-        ├─ Measure viewport
-        ├─ Read prefersReducedMotion
-        └─ Wire global event listeners
+### Phase 1 — Registration (runs once at module load)
 
-2. .astro <script> tags execute
-   └─ defineComponent('name', def) × N  →  stored in definitions map
+Astro bundles all component `<script>` blocks into a single Vite module. When the browser loads it:
 
-3. astro:page-load fires
-   └─ destroy() → clear all instances
-   └─ scan()
-        ├─ querySelectorAll('[data-component]')
-        ├─ Build subgraph from present names
-        ├─ Kahn's BFS → waves: string[][]
-        └─ For each wave:
-             ├─ Create ComponentInstance per element
-             └─ Promise.all(init(ctx) per instance)
-                  ├─ On resolve: store cleanup, mark "ready"
-                  └─ On reject: console.warn, mark failed, continue
 ```
+<script type="module" src="bundle.js"> executes
+  ├─ index.ts: new ComponentSystem()
+  │    ├─ Measure viewport (window.innerWidth/Height)
+  │    ├─ Read prefersReducedMotion
+  │    └─ Attach bound handlers to window/document
+  │         (throttled resize, matchMedia change, astro:page-load, beforeunload)
+  │
+  └─ Each component's defineComponent('name', def) runs — once per component TYPE
+       └─ Stored in definitions Map
+```
+
+**Astro script deduplication:** If `Card.astro` is rendered 50 times, its `<script>` runs **once**. `defineComponent('card', def)` is called once; 50 instances are created during `scan()`.
+
+**ES module caching:** All imports of `'../scripts'` resolve to the same cached module — the singleton is shared across every component file automatically.
+
+### Phase 2 — Scan (runs on every astro:page-load)
+
+`astro:page-load` fires on the initial page load and after every view transition. No separate `DOMContentLoaded` listener needed.
+
+```
+astro:page-load fires
+  └─ if already scanning: return  ← concurrent scan guard
+  └─ destroy() — abort all instance ACs, run cleanup fns, clear instances
+  └─ querySelectorAll('[data-component]')
+  └─ Filter to names present in definitions (unknown names silently skipped)
+  └─ Kahn's BFS → waves: string[][]
+  └─ For each wave (sequential between waves):
+       └─ Promise.all — init all instances in wave concurrently:
+            ├─ Create AbortController per instance
+            ├─ Build context object (element, viewport, ac, find, findAll, ref, log, system...)
+            ├─ try { cleanup = await def.init(ctx) } catch → console.warn, continue
+            ├─ Store cleanup fn + register in instanceMap (WeakMap<Element, Instance>)
+            └─ Resolve readyPromise → unblocks next wave
+```
+
+### System lifecycle
+
+| Event | Action |
+|-------|--------|
+| `astro:page-load` | `destroy()` instances → `scan()` |
+| `beforeunload` | `destroy()` instances |
+| Test `afterEach` | `dispose()` — `destroy()` + remove global listeners |
+
+`destroy()` cleans up component instances and keeps the system ready for the next scan. `dispose()` is a full teardown that additionally removes global event listeners — used only in tests to prevent ghost handlers accumulating across test runs.
 
 ---
 
@@ -221,16 +310,23 @@ beforeEach(() => {
 | Registration | Store definition; duplicate overwrites |
 | DOM scan | Find all `[data-component]` elements; ignore undefined |
 | Init order | Wave 0 before Wave 1; async dep blocks dependent |
-| Multi-instance | Multiple same-name elements all get `init` |
+| Multi-instance | 50 same-name elements → all 50 init concurrently |
 | Circular dep | A→B→A throws with names in message |
-| Cleanup | Returned fn called on `destroy()`; `undefined` return safe |
+| Cleanup | `ac.abort()` fires before cleanup fn; `undefined` return safe |
 | Async readiness | Dependent waits for dep's `init()` to resolve |
-| Context values | `element`, `viewport`, `prefersReducedMotion` correct |
+| Context values | `element`, `viewport`, `prefersReducedMotion`, `ac`, helpers correct |
 | Viewport update | Object mutated after resize event |
 | Error resilience | Throwing `init()` warns, others still init |
 | Page load | `astro:page-load` destroys + re-scans; inits fire again |
+| Concurrent scan | Second `astro:page-load` mid-scan is ignored |
 | Missing dep | Dep absent from DOM → component inits without blocking |
 | system.on/off | Resize callback fires; `off()` stops firing |
+| AbortController | `signal` passed to `system.on` auto-removes listener on abort |
+| Mixed cleanup | One `ac.abort()` removes both DOM and system listeners |
+| `find` / `findAll` | Returns elements scoped to component element |
+| `ref` | Finds `[data-ref="name"]` within component element |
+| `log` | No-op in production; logs with component name prefix in dev |
+| `dispose()` | Removes global listeners; no ghost handlers after teardown |
 
 ---
 

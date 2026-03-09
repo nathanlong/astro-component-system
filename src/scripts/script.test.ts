@@ -363,6 +363,47 @@ describe('Page load', () => {
   });
 });
 
+// ── window load fallback ──────────────────────────────────────────────────────
+
+describe('window load fallback', () => {
+  it('triggers initial scan when astro:page-load never fires', async () => {
+    let resolveInit!: () => void;
+    const initDone = new Promise<void>(r => { resolveInit = r; });
+
+    sys.register('foo', {
+      init: () => { resolveInit(); },
+    });
+    addComponent('foo');
+
+    window.dispatchEvent(new Event('load'));
+    await initDone;
+  });
+
+  it('is a no-op when scan is already in progress (astro:page-load fired first)', async () => {
+    let initCount = 0;
+    let resolveInit!: () => void;
+
+    sys.register('slow', {
+      init: () => {
+        initCount++;
+        return new Promise<void>(r => { resolveInit = r; });
+      },
+    });
+    addComponent('slow');
+
+    // Simulate ClientRouter: astro:page-load fires first (starts scan)
+    document.dispatchEvent(new Event('astro:page-load'));
+
+    // Then window load fires — should be a no-op because scanning=true
+    window.dispatchEvent(new Event('load'));
+
+    resolveInit();
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(initCount).toBe(1);
+  });
+});
+
 // ── Concurrent scan ───────────────────────────────────────────────────────────
 
 describe('Concurrent scan', () => {
@@ -662,6 +703,19 @@ describe('dispose()', () => {
     sys.dispose();
 
     document.dispatchEvent(new Event('astro:page-load'));
+    await new Promise(r => setTimeout(r, 10));
+
+    expect(init).not.toHaveBeenCalled();
+  });
+
+  it('removes window load listener — no scan after dispose', async () => {
+    const init = vi.fn();
+    sys.register('foo', { init });
+    addComponent('foo');
+
+    sys.dispose();
+
+    window.dispatchEvent(new Event('load'));
     await new Promise(r => setTimeout(r, 10));
 
     expect(init).not.toHaveBeenCalled();

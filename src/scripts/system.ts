@@ -52,6 +52,7 @@ export class ComponentSystem {
   private readonly _onMotionChange: (e: MediaQueryListEvent) => void;
   private readonly _onPageLoad: () => void;
   private readonly _onBeforeUnload: () => void;
+  private readonly _onLoad: () => void;
 
   constructor() {
     this.viewport = {
@@ -88,10 +89,19 @@ export class ComponentSystem {
       this.destroy();
     };
 
+    // Fallback initial scan for sites without <ClientRouter />.
+    // ClientRouter fires astro:page-load synchronously inside its own "load"
+    // handler, so by the time this listener runs, scanning is already true and
+    // the guard below is a no-op. Without ClientRouter, this is the only trigger.
+    this._onLoad = () => {
+      if (!this.scanning) void this.scan();
+    };
+
     window.addEventListener('resize', this._onResize);
     mq.addEventListener('change', this._onMotionChange);
     document.addEventListener('astro:page-load', this._onPageLoad);
     window.addEventListener('beforeunload', this._onBeforeUnload);
+    window.addEventListener('load', this._onLoad, { once: true });
   }
 
   register(name: string, def: ComponentDefinition): void {
@@ -228,6 +238,7 @@ export class ComponentSystem {
     this._mediaQuery.removeEventListener('change', this._onMotionChange);
     document.removeEventListener('astro:page-load', this._onPageLoad);
     window.removeEventListener('beforeunload', this._onBeforeUnload);
+    window.removeEventListener('load', this._onLoad);
     if (this._resizeTimer !== null) {
       clearTimeout(this._resizeTimer);
       this._resizeTimer = null;

@@ -1,11 +1,51 @@
 ---
-import Welcome from '../components/Welcome.astro';
 import Layout from '../layouts/Layout.astro';
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
 ---
 
 <Layout>
-	<Welcome />
+  <main data-component="demo">
+    <h1 data-ref="title">Component System</h1>
+    <p data-ref="status">Initializing…</p>
+    <p data-ref="viewport"></p>
+    <button data-ref="btn">Click me</button>
+  </main>
 </Layout>
+
+<script>
+  import { defineComponent } from '../scripts';
+
+  defineComponent('demo', {
+    init({ ref, viewport, prefersReducedMotion, system, ac, log }) {
+      const title  = ref<HTMLElement>('title');
+      const status = ref<HTMLElement>('status');
+      const vp     = ref<HTMLElement>('viewport');
+      const btn    = ref<HTMLButtonElement>('btn');
+
+      log('init', { viewport, prefersReducedMotion });
+
+      if (status) status.textContent = 'Ready.';
+      if (vp) vp.textContent = `Viewport: ${viewport.width} × ${viewport.height}`;
+
+      system.on('resize', ({ viewport: v }) => {
+        if (vp) vp.textContent = `Viewport: ${v.width} × ${v.height}`;
+        log('resize', v);
+      }, { signal: ac.signal });
+
+      btn?.addEventListener('click', () => {
+        if (title) title.textContent = 'Clicked!';
+        log('click');
+      }, { signal: ac.signal });
+    },
+  });
+</script>
+
+<style>
+  main {
+    font-family: sans-serif;
+    max-width: 480px;
+    margin: 4rem auto;
+    padding: 2rem;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+</style>

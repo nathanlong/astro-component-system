@@ -1,51 +1,78 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import ViewportInfo from '../components/ViewportInfo.astro';
+import Accordion from '../components/Accordion.astro';
+import Dashboard from '../components/Dashboard.astro';
 ---
 
 <Layout>
-  <main data-component="demo">
-    <h1 data-ref="title">Component System</h1>
-    <p data-ref="status">Initializing…</p>
-    <p data-ref="viewport"></p>
-    <button data-ref="btn">Click me</button>
-  </main>
+  <div class="min-h-screen bg-zinc-950 text-zinc-100">
+
+    <ViewportInfo />
+
+    <main class="mx-auto max-w-2xl px-4 py-14">
+
+      <div class="mb-10">
+        <h1 class="mb-2 text-2xl font-semibold tracking-tight">Astro Component System Demo</h1>
+        <p class="text-sm text-zinc-400">
+          Three components, one dependency chain.
+          Open the browser console to see <code>log()</code> output.
+        </p>
+      </div>
+
+      <div class="space-y-2 mb-8">
+
+        <Accordion question="What does <code>defineComponent</code> do?">
+          <p>
+            <code>defineComponent(name, def)</code> registers a component definition with the
+            system singleton. The system matches it against every
+            <code>[data-component="name"]</code> element found during scan.
+          </p>
+          <p>
+            If a component is rendered 50 times, <code>defineComponent</code> is called
+            once — Astro deduplicates scripts automatically. The system creates 50
+            independent instances, each with its own <code>AbortController</code>.
+          </p>
+        </Accordion>
+
+        <Accordion question="How does the <code>AbortController</code> lifecycle work?">
+          <p>
+            Before calling <code>init()</code>, the system creates an
+            <code>AbortController</code> for the instance and passes it as
+            <code>ac</code> in context.
+          </p>
+          <p>
+            Pass <code>&#123; signal: ac.signal &#125;</code> to DOM listeners and
+            <code>system.on()</code> calls alike. On destroy, <code>ac.abort()</code>
+            fires and removes all of them at once — no manual cleanup needed.
+          </p>
+        </Accordion>
+
+        <Accordion question="How do <code>deps</code> affect initialization order?">
+          <p>
+            Components are sorted into <em>waves</em> using Kahn's topological BFS.
+            All components in a wave initialize concurrently. The next wave only
+            starts once every <code>init()</code> in the current wave has resolved —
+            including async ones.
+          </p>
+          <p>
+            The <code>dashboard</code> component on this page declares
+            <code>deps: ['accordion', 'viewport-info']</code>, so it is guaranteed
+            to run after both are fully initialized.
+          </p>
+        </Accordion>
+
+      </div>
+
+      <Dashboard />
+
+    </main>
+  </div>
 </Layout>
 
-<script>
-  import { defineComponent } from '../scripts';
-
-  defineComponent('demo', {
-    init({ ref, viewport, prefersReducedMotion, system, ac, log }) {
-      const title  = ref<HTMLElement>('title');
-      const status = ref<HTMLElement>('status');
-      const vp     = ref<HTMLElement>('viewport');
-      const btn    = ref<HTMLButtonElement>('btn');
-
-      log('init', { viewport, prefersReducedMotion });
-
-      if (status) status.textContent = 'Ready.';
-      if (vp) vp.textContent = `Viewport: ${viewport.width} × ${viewport.height}`;
-
-      system.on('resize', ({ viewport: v }) => {
-        if (vp) vp.textContent = `Viewport: ${v.width} × ${v.height}`;
-        log('resize', v);
-      }, { signal: ac.signal });
-
-      btn?.addEventListener('click', () => {
-        if (title) title.textContent = 'Clicked!';
-        log('click');
-      }, { signal: ac.signal });
-    },
-  });
-</script>
-
-<style>
-  main {
-    font-family: sans-serif;
-    max-width: 480px;
-    margin: 4rem auto;
-    padding: 2rem;
-    border: 1px solid #ccc;
-    border-radius: 8px;
+<style is:global>
+  code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.85em;
   }
 </style>

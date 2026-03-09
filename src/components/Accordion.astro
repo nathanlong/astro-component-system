@@ -1,0 +1,66 @@
+---
+interface Props {
+  question: string;
+}
+
+const { question } = Astro.props;
+---
+
+<div data-component="accordion" class="rounded-lg border border-zinc-800 bg-zinc-900">
+  <button
+    data-ref="trigger"
+    class="flex w-full items-center justify-between px-5 py-4
+           text-left text-sm font-medium text-zinc-100
+           hover:bg-zinc-800/60 transition-colors rounded-lg"
+    aria-expanded="false"
+  >
+    <span set:html={question} />
+    <span data-ref="icon" class="text-zinc-500 text-xs">▼</span>
+  </button>
+  <div data-ref="panel">
+    <div class="px-5 pb-5 pt-1 text-sm text-zinc-400 leading-relaxed space-y-2">
+      <slot />
+    </div>
+  </div>
+</div>
+
+<script>
+  import { defineComponent } from '../scripts';
+
+  // This script runs once even when Accordion is rendered multiple times.
+  // The system creates one independent instance per [data-component="accordion"]
+  // element found during scan — each with its own AbortController.
+  defineComponent('accordion', {
+    init({ element, ref, ac, prefersReducedMotion, log }) {
+      const trigger = ref<HTMLButtonElement>('trigger');
+      const panel   = ref<HTMLElement>('panel');
+      const icon    = ref<HTMLElement>('icon');
+
+      if (!trigger || !panel) return;
+
+      panel.style.overflow  = 'hidden';
+      panel.style.maxHeight = '0';
+      panel.style.opacity   = '0';
+      if (!prefersReducedMotion) {
+        panel.style.transition = 'max-height 0.25s ease, opacity 0.2s ease';
+        if (icon) icon.style.transition = 'transform 0.2s ease';
+      }
+
+      let open = false;
+
+      function setOpen(next: boolean) {
+        open = next;
+        trigger!.setAttribute('aria-expanded', String(open));
+        element.classList.toggle('is-open', open);
+        panel!.style.maxHeight = open ? `${panel!.scrollHeight}px` : '0';
+        panel!.style.opacity   = open ? '1' : '0';
+        if (icon) icon.style.transform = open ? 'rotate(180deg)' : '';
+      }
+
+      trigger.addEventListener('click', () => setOpen(!open), { signal: ac.signal });
+
+      // Non-listener teardown: reset visual state when the instance is destroyed
+      return () => setOpen(false);
+    },
+  });
+</script>

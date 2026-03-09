@@ -1,0 +1,67 @@
+<div
+  data-component="dashboard"
+  class="rounded-lg border border-zinc-800 bg-zinc-900 px-5 py-4"
+>
+  <div class="flex items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p data-ref="status" class="text-sm text-zinc-300">Initializing…</p>
+      <p data-ref="breakpoint" class="font-mono text-xs text-zinc-500"></p>
+    </div>
+    <button
+      data-ref="reset"
+      class="shrink-0 rounded-md border border-zinc-700 bg-zinc-800
+             px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-600
+             hover:bg-zinc-700 transition-colors"
+    >
+      Close all
+    </button>
+  </div>
+</div>
+
+<script>
+  import { defineComponent } from '../scripts';
+
+  defineComponent('dashboard', {
+    deps: ['accordion', 'viewport-info'],
+    init({ ref, system, ac, viewport, log }) {
+      const status     = ref<HTMLElement>('status');
+      const breakpoint = ref<HTMLElement>('breakpoint');
+      const reset      = ref<HTMLButtonElement>('reset');
+
+      const accordionEls = document.querySelectorAll('[data-component="accordion"]');
+
+      function getBreakpoint(w: number) {
+        if (w >= 1280) return 'xl';
+        if (w >= 1024) return 'lg';
+        if (w >= 768)  return 'md';
+        if (w >= 640)  return 'sm';
+        return 'xs';
+      }
+
+      function renderBreakpoint(w = viewport.width) {
+        if (breakpoint) breakpoint.textContent = `breakpoint: ${getBreakpoint(w)}`;
+      }
+
+      if (status) {
+        const n = accordionEls.length;
+        status.textContent = `${n} accordion instance${n !== 1 ? 's' : ''} initialized`;
+      }
+      renderBreakpoint();
+      log('init — accordion dep satisfied', { count: accordionEls.length });
+
+      system.on('resize', ({ viewport: v }) => {
+        renderBreakpoint(v.width);
+        log('resize', { breakpoint: getBreakpoint(v.width) });
+      }, { signal: ac.signal });
+
+      reset?.addEventListener('click', () => {
+        document
+          .querySelectorAll<HTMLButtonElement>(
+            '[data-component="accordion"] [data-ref="trigger"][aria-expanded="true"]',
+          )
+          .forEach(btn => btn.click());
+        log('reset all');
+      }, { signal: ac.signal });
+    },
+  });
+</script>

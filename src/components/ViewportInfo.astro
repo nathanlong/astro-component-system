@@ -1,0 +1,44 @@
+<header
+  data-component="viewport-info"
+  class="sticky top-0 z-10 flex items-center justify-between gap-4
+         border-b border-zinc-800 bg-zinc-950/90 px-6 py-3
+         font-mono text-xs text-zinc-400 backdrop-blur"
+>
+  <span class="flex items-center gap-2">
+    <span class="text-zinc-600">viewport</span>
+    <span data-ref="dimensions" class="text-zinc-300">— × —</span>
+  </span>
+  <span class="flex items-center gap-2">
+    <span class="text-zinc-600">motion</span>
+    <span data-ref="motion" class="text-zinc-300">—</span>
+  </span>
+</header>
+
+<script>
+  import { defineComponent } from '../scripts';
+
+  defineComponent('viewport-info', {
+    init({ ref, system, ac, viewport, prefersReducedMotion, log }) {
+      const dimensions = ref<HTMLElement>('dimensions');
+      const motion     = ref<HTMLElement>('motion');
+
+      function render(v = viewport, reduced = prefersReducedMotion) {
+        if (dimensions) dimensions.textContent = `${v.width} × ${v.height}`;
+        if (motion)     motion.textContent     = reduced ? 'reduced' : 'full';
+      }
+
+      render();
+      log('init', { viewport, prefersReducedMotion });
+
+      system.on('resize', ({ viewport: v }) => {
+        render(v);
+        log('resize', v);
+      }, { signal: ac.signal });
+
+      system.on('motionchange', ({ prefersReducedMotion: reduced }) => {
+        render(viewport, reduced);
+        log('motionchange', { reduced });
+      }, { signal: ac.signal });
+    },
+  });
+</script>

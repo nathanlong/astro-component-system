@@ -216,7 +216,13 @@ export class ComponentSystem {
     try {
       const result = await def.init(ctx);
       if (typeof result === 'function') {
-        instance.cleanup = result;
+        // If destroy() ran while init was awaiting, call cleanup immediately
+        // rather than storing it on an already-destroyed instance.
+        if (ac.signal.aborted) {
+          result();
+        } else {
+          instance.cleanup = result;
+        }
       }
     } catch (err) {
       console.warn(`[ComponentSystem] '${name}' init failed on`, element);
@@ -234,6 +240,7 @@ export class ComponentSystem {
 
   dispose(): void {
     this.destroy();
+    this.subscribers.clear();
     window.removeEventListener('resize', this._onResize);
     this._mediaQuery.removeEventListener('change', this._onMotionChange);
     document.removeEventListener('astro:page-load', this._onPageLoad);
@@ -270,7 +277,9 @@ export class ComponentSystem {
   }
 
   private _emit<E extends SystemEvent>(event: E, payload: EventMap[E]): void {
-    for (const cb of this.subscribers.get(event) ?? []) {
+    const subs = this.subscribers.get(event);
+    if (!subs) return;
+    for (const cb of [...subs]) {
       cb(payload);
     }
   }

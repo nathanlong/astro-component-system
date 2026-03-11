@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ComponentSystem } from './system';
+import { ComponentSystem, type CleanupFn } from './system';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -187,6 +187,23 @@ describe('Cleanup', () => {
     addComponent('foo');
     await sys.scan();
     expect(() => sys.destroy()).not.toThrow();
+  });
+
+  it('cleanup fn from async init is called even when destroy fires during await', async () => {
+    const cleanup = vi.fn();
+    let resolveInit!: (fn: CleanupFn) => void;
+
+    sys.register('slow', {
+      init: () => new Promise<CleanupFn>(resolve => { resolveInit = resolve; }),
+    });
+
+    addComponent('slow');
+    void sys.scan();       // start scan, do not await
+    sys.destroy();         // destroy while init is still pending
+    resolveInit(cleanup);  // init resolves with a cleanup fn after destroy
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(cleanup).toHaveBeenCalledOnce();
   });
 });
 
@@ -494,6 +511,26 @@ describe('system.on / off', () => {
     expect(cb).toHaveBeenCalledOnce(); // still once
     vi.useRealTimers();
   });
+
+  it('removing a subscriber during emit does not skip other subscribers', () => {
+    vi.useFakeTimers();
+    const cb1 = vi.fn();
+    const cb3 = vi.fn();
+    // cb2 removes cb3 from the subscriber set mid-emit
+    const cb2 = vi.fn(() => sys.off('resize', cb3));
+
+    sys.on('resize', cb1);
+    sys.on('resize', cb2);
+    sys.on('resize', cb3);
+
+    window.dispatchEvent(new Event('resize'));
+    vi.advanceTimersByTime(250);
+
+    expect(cb1).toHaveBeenCalledOnce();
+    expect(cb2).toHaveBeenCalledOnce();
+    expect(cb3).toHaveBeenCalledOnce(); // snapshot ensures cb3 still fires this cycle
+    vi.useRealTimers();
+  });
 });
 
 // ── AbortController signal ────────────────────────────────────────────────────
@@ -730,5 +767,12 @@ describe('dispose()', () => {
     sys.dispose();
 
     expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('clears all subscribers on dispose — calling dispose() twice does not throw', () => {
+    const cb = vi.fn();
+    sys.on('resize', cb);
+    sys.dispose(); // clears subscribers + removes listeners
+    expect(() => sys.dispose()).not.toThrow(); // second dispose on empty state is safe
   });
 });

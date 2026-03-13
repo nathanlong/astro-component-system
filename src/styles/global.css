@@ -1,1 +1,78 @@
 @import "tailwindcss";
+
+@theme {
+  /* Clear default colors */
+  /* --color-*: initial; */
+
+  /* Colors */
+  --color-transparent: transparent;
+  --color-current: currentColor;
+}
+
+@layer base {
+  :root {
+    --transition-toggle: 0;
+    --animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :root {
+      --transition-toggle: 1;
+      --animation-play-state: running;
+    }
+  }
+}
+
+/* Motion-safe transition durations */
+/* prettier-ignore */
+@utility safe-duration-* {
+  transition-duration: calc(var(--transition-toggle) * --value(integer)ms);
+}
+
+/* Motion-safe animation state */
+@utility safe-animation {
+  animation-play-state: var(--animation-play-state);
+}
+
+/* Flow/margin spacing system --------------------------------------------------- */
+/* https://piccalil.li/blog/my-favourite-3-lines-of-css/ */
+
+@utility flow {
+  & > * + * {
+    margin-block-start: var(--flow-space, 1rem);
+  }
+}
+
+/* prettier-ignore */
+@utility flow-* {
+  --flow-space: --value([*]);
+  --flow-space: --value(--spacing-*);
+}
+
+/* Utility for JS activation/deactivation ---------------------------------- */
+
+@custom-variant activated {
+  &:where([data-active="true"]) {
+    @slot;
+  }
+}
+
+@custom-variant deactivated {
+  &:where([data-active="false"]) {
+    @slot;
+  }
+}
+
+/* Group variant for descendants */
+
+@custom-variant group-activated {
+  .group[data-active="true"] & {
+    @slot;
+  }
+}
+
+@custom-variant group-deactivated {
+  .group[data-active="false"] & {
+    @slot;
+  }
+}

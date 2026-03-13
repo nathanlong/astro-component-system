@@ -4,7 +4,7 @@ export interface Viewport {
 }
 
 export interface ComponentContext {
-  element: Element;
+  element: HTMLElement;
   viewport: Readonly<Viewport>;
   prefersReducedMotion: boolean;
   system: ComponentSystem;
@@ -32,7 +32,7 @@ type AnyEventCallback = (payload: EventMap[SystemEvent]) => void;
 
 interface Instance {
   name: string;
-  element: Element;
+  element: HTMLElement;
   ac: AbortController;
   cleanup: CleanupFn | undefined;
 }
@@ -113,10 +113,8 @@ export class ComponentSystem {
     this._scanTriggered = true;
     this.scanning = true;
 
-    console.log('scanning');
-
     try {
-      const elements = Array.from(document.querySelectorAll<Element>('[data-component]'));
+      const elements = Array.from(document.querySelectorAll<HTMLElement>('[data-component]'));
 
       const known = elements.filter(el => {
         const name = el.getAttribute('data-component');
@@ -192,7 +190,7 @@ export class ComponentSystem {
 
   private async _initInstance(
     name: string,
-    element: Element,
+    element: HTMLElement,
     def: ComponentDefinition,
   ): Promise<void> {
     const ac = new AbortController();

@@ -44,6 +44,7 @@ export class ComponentSystem {
   private prefersReducedMotion: boolean;
   private subscribers = new Map<string, Set<AnyEventCallback>>();
   private scanning = false;
+  private _scanTriggered = false;
 
   private _resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private _mediaQuery: MediaQueryList;
@@ -90,11 +91,10 @@ export class ComponentSystem {
     };
 
     // Fallback initial scan for sites without <ClientRouter />.
-    // ClientRouter fires astro:page-load synchronously inside its own "load"
-    // handler, so by the time this listener runs, scanning is already true and
-    // the guard below is a no-op. Without ClientRouter, this is the only trigger.
+    // If astro:page-load already fired (or fires synchronously during this same
+    // load event via ClientRouter), _scanTriggered will be true and we skip.
     this._onLoad = () => {
-      if (!this.scanning) void this.scan();
+      if (!this._scanTriggered) void this.scan();
     };
 
     window.addEventListener('resize', this._onResize);
@@ -110,7 +110,10 @@ export class ComponentSystem {
 
   async scan(): Promise<void> {
     if (this.scanning) return;
+    this._scanTriggered = true;
     this.scanning = true;
+
+    console.log('scanning');
 
     try {
       const elements = Array.from(document.querySelectorAll<Element>('[data-component]'));

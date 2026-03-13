@@ -187,6 +187,19 @@ Wave 2: ['carousel']         — deps: ['hero']
 - All components within a wave initialize concurrently (`Promise.all`)
 - Circular dependencies throw: `Circular dependency detected among: hero, carousel`
 
+## Dev debugging
+
+In development, the singleton is available at `window.__componentSystem`:
+
+```js
+[...__componentSystem.definitions.keys()]  // registered component names
+__componentSystem.instances                // active instances
+__componentSystem.viewport                 // current viewport
+__componentSystem.scan()                   // manually re-scan
+```
+
+This is stripped from production builds automatically.
+
 ## Log helper
 
 `log` is a no-op in production (`import.meta.env.DEV === false`). In development it prefixes output with the component name and element:

@@ -272,6 +272,31 @@ Error: Cannot read properties of null (reading 'animate')
 
 ---
 
+## Dev Debug Access
+
+In development (`import.meta.env.DEV`), the singleton is attached to `window.__componentSystem`. This is tree-shaken from production builds by Vite.
+
+Useful console commands:
+
+```js
+// Registered component names
+[...__componentSystem.definitions.keys()]
+
+// Active instances
+__componentSystem.instances
+
+// Current viewport
+__componentSystem.viewport
+
+// Scan in progress?
+__componentSystem.scanning
+
+// Manually re-scan
+__componentSystem.scan()
+```
+
+---
+
 ## File Structure
 
 ```
